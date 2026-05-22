@@ -1,0 +1,20 @@
+# Sample OpenTelemetry Collector configuration for MQTT Sparkplug receiver
+# Use this with the collector built from otelcol-builder/builder-config.yaml
+
+receivers:
+  sparkplug:
+    broker:
+      endpoint: "localhost:1883"
+      transport: tcp
+      self_hosted: true
+      host_id: "otelcol-primary"
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    metrics:
+      receivers: [sparkplug]
+      exporters: [debug]
