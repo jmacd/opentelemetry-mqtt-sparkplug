@@ -1,4 +1,5 @@
-// Copyright ...
+// Copyright (c) Caspar Water Company, LLC
+// SPDX-License-Identifier: Apache-2.0
 //
 //go:generate stringer -type=MessageType
 package sparkplug
@@ -7,7 +8,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/bproto"
+	sparkproto "github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/proto"
 )
 
 type (
@@ -24,7 +25,7 @@ type (
 
 	MessageType string
 
-	Payload = bproto.Payload
+	Payload = sparkproto.Payload
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug"
-	"github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/bproto"
+	sparkproto "github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/proto"
 )
 
 type (
@@ -127,7 +127,7 @@ func (st Store) Define(name string, alias, ts uint64, desc string) *Metric {
 	return metric
 }
 
-func (st Store) Visit(topic sparkplug.Topic, payload *bproto.Payload) error {
+func (st Store) Visit(topic sparkplug.Topic, payload *sparkproto.Payload) error {
 	*st.LastTime = time.Now()
 
 	if topic.MessageType.IsBirth() && payload.GetTimestamp() != 0 {

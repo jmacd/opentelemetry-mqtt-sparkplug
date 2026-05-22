@@ -11,7 +11,7 @@ import (
 
 	"github.com/jmacd/opentelemetry-mqtt-sparkplug/otlp"
 	"github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug"
-	"github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/bproto"
+	sparkproto "github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/proto"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
@@ -232,7 +232,7 @@ func (r *sparkplugReceiver) onMessage(cl *mqtt.Client, pk packets.Packet) (packe
 		return pk, fmt.Errorf("parse topic: %w: %s", err, pk.TopicName)
 	}
 
-	b := &bproto.Payload{}
+	b := &sparkproto.Payload{}
 	if err := proto.Unmarshal(pk.Payload, b); err != nil {
 		return pk, fmt.Errorf("payload unmarshal: %v: %w", pk.TopicName, err)
 	}
@@ -240,7 +240,7 @@ func (r *sparkplugReceiver) onMessage(cl *mqtt.Client, pk packets.Packet) (packe
 	return pk, r.sparkplugPayload(topic, b)
 }
 
-func (r *sparkplugReceiver) sparkplugPayload(topic sparkplug.Topic, payload *bproto.Payload) error {
+func (r *sparkplugReceiver) sparkplugPayload(topic sparkplug.Topic, payload *sparkproto.Payload) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -257,7 +257,7 @@ func (r *sparkplugReceiver) sparkplugPayload(topic sparkplug.Topic, payload *bpr
 	return fmt.Errorf("%w: %v", ErrUnexpectedTopic, topic.MessageType)
 }
 
-func (r *sparkplugReceiver) sparkplugNodePayload(topic sparkplug.Topic, payload *bproto.Payload) error {
+func (r *sparkplugReceiver) sparkplugNodePayload(topic sparkplug.Topic, payload *sparkproto.Payload) error {
 	node := r.state.Get(topic.GroupID).Get(topic.EdgeNodeID)
 	return node.Visit(topic, payload)
 }
@@ -311,24 +311,24 @@ func metricName(name string) string {
 
 func anyValue(value interface{}) pcommon.Value {
 	switch t := value.(type) {
-	case *bproto.Payload_Metric_IntValue:
+	case *sparkproto.Payload_Metric_IntValue:
 		return pcommon.NewValueInt(int64(t.IntValue))
-	case *bproto.Payload_Metric_LongValue:
+	case *sparkproto.Payload_Metric_LongValue:
 		return pcommon.NewValueInt(int64(t.LongValue))
-	case *bproto.Payload_Metric_FloatValue:
+	case *sparkproto.Payload_Metric_FloatValue:
 		return pcommon.NewValueDouble(float64(t.FloatValue))
-	case *bproto.Payload_Metric_DoubleValue:
+	case *sparkproto.Payload_Metric_DoubleValue:
 		return pcommon.NewValueDouble(t.DoubleValue)
-	case *bproto.Payload_Metric_BooleanValue:
+	case *sparkproto.Payload_Metric_BooleanValue:
 		return pcommon.NewValueBool(t.BooleanValue)
-	case *bproto.Payload_Metric_StringValue:
+	case *sparkproto.Payload_Metric_StringValue:
 		return pcommon.NewValueStr(t.StringValue)
-	case *bproto.Payload_Metric_BytesValue:
+	case *sparkproto.Payload_Metric_BytesValue:
 		return pcommon.NewValueStr(string(t.BytesValue))
 
-	case *bproto.Payload_Metric_DatasetValue,
-		*bproto.Payload_Metric_TemplateValue,
-		*bproto.Payload_Metric_ExtensionValue:
+	case *sparkproto.Payload_Metric_DatasetValue,
+		*sparkproto.Payload_Metric_TemplateValue,
+		*sparkproto.Payload_Metric_ExtensionValue:
 		break
 	}
 	return pcommon.NewValueStr(fmt.Sprintf("unsupported attribute type: %T", value))
@@ -336,20 +336,20 @@ func anyValue(value interface{}) pcommon.Value {
 
 func (r *sparkplugReceiver) setNumberValue(point pmetric.NumberDataPoint, value interface{}) {
 	switch t := value.(type) {
-	case *bproto.Payload_Metric_IntValue:
+	case *sparkproto.Payload_Metric_IntValue:
 		point.SetIntValue(int64(t.IntValue))
-	case *bproto.Payload_Metric_LongValue:
+	case *sparkproto.Payload_Metric_LongValue:
 		point.SetIntValue(int64(t.LongValue))
-	case *bproto.Payload_Metric_FloatValue:
+	case *sparkproto.Payload_Metric_FloatValue:
 		point.SetDoubleValue(float64(t.FloatValue))
-	case *bproto.Payload_Metric_DoubleValue:
+	case *sparkproto.Payload_Metric_DoubleValue:
 		point.SetDoubleValue(t.DoubleValue)
 	default:
 		point.SetDoubleValue(math.NaN())
 	}
 }
 
-func (r *sparkplugReceiver) sparkplugDevicePayload(topic sparkplug.Topic, payload *bproto.Payload) error {
+func (r *sparkplugReceiver) sparkplugDevicePayload(topic sparkplug.Topic, payload *sparkproto.Payload) error {
 	node := r.state.Get(topic.GroupID).Get(topic.EdgeNodeID)
 	device := node.Get(topic.DeviceID)
 	return device.Visit(topic, payload)

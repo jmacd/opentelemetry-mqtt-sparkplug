@@ -12,11 +12,11 @@
 // Sparkplug v3.0.0 Payload Definition
 //
 // To compile:
-//   protoc --go_out=bproto --go_opt=paths=source_relative sparkplug_b.proto
+//   protoc --go_out=proto --go_opt=paths=source_relative sparkplug_3.proto
 
 syntax = "proto2";
 
-option go_package = "github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/bproto";
+option go_package = "github.com/jmacd/opentelemetry-mqtt-sparkplug/sparkplug/proto";
 
 enum DataType {
     // Indexes of Data Types
