@@ -35,6 +35,16 @@ func TestTopicString(t *testing.T) {
 	}
 }
 
+func TestTopicStringWildcardTruncatesSuffix(t *testing.T) {
+	topic := Topic{
+		GroupID:     "#",
+		MessageType: DBIRTH,
+		EdgeNodeID:  "node",
+		DeviceID:    "device",
+	}
+	require.Equal(t, "spBv1.0/#", topic.String())
+}
+
 func TestTopicParse(t *testing.T) {
 	for _, test := range testTopics {
 		topic, err := ParseTopic(test.Expect)
@@ -52,4 +62,19 @@ func TestTopicError(t *testing.T) {
 	require.Error(t, parseError("spBv1.0//c/d"))
 	require.Error(t, parseError("spBv1.0/b/c/d"))
 	require.Error(t, parseError("spBv1.0/b/NDEATH/d/e/f"))
+}
+
+func TestMessageTypeIsBirth(t *testing.T) {
+	require.True(t, NBIRTH.IsBirth())
+	require.True(t, DBIRTH.IsBirth())
+	require.False(t, NDEATH.IsBirth())
+}
+
+func TestNewTopic(t *testing.T) {
+	require.Equal(t, Topic{
+		GroupID:     "grp",
+		MessageType: NCMD,
+		EdgeNodeID:  "node",
+		DeviceID:    "dev",
+	}, NewTopic("grp", NCMD, "node", "dev"))
 }
