@@ -165,7 +165,7 @@ func (h *sparkplugHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.P
 }
 
 func (r *sparkplugReceiver) startBroker(context.Context) error {
-	r.broker = mqtt.New(nil)
+	r.broker = mqtt.New(&mqtt.Options{InlineClient: true})
 	r.brokerDone = make(chan error)
 
 	switch r.config.Broker.AddrConfig.Transport {
