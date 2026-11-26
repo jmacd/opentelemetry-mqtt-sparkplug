@@ -3,6 +3,7 @@ package sparkplugreceiver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -51,7 +52,8 @@ type sparkplugReceiver struct {
 	allowMetrics map[string]bool
 	nextConsumer consumer.Metrics
 	broker       *mqtt.Server
-	brokerDone   chan error
+	cancelFlush  context.CancelFunc
+	flushDone    chan struct{}
 	state        otlp.SparkplugState
 	lastUpdate   time.Time
 }
@@ -99,9 +101,10 @@ func (r *sparkplugReceiver) Start(ctx context.Context, host component.Host) erro
 		return fmt.Errorf("not implemented: passive client mode")
 	}
 
-	if err := r.startBroker(ctx); err != nil {
-		return err
+	if err := r.startBroker(); err != nil {
+		return errors.Join(err, r.Shutdown(ctx))
 	}
+	r.startFlushing(ctx)
 	r.settings.Logger.Info(
 		"self-hosted broker start",
 		zap.String("host_id", r.config.Broker.HostID),
@@ -110,9 +113,23 @@ func (r *sparkplugReceiver) Start(ctx context.Context, host component.Host) erro
 	return nil
 }
 
-func (r *sparkplugReceiver) Shutdown(context.Context) error {
-	_ = r.broker.Close()
-	return <-r.brokerDone
+func (r *sparkplugReceiver) Shutdown(ctx context.Context) error {
+	if r.cancelFlush != nil {
+		r.cancelFlush()
+	}
+	var err error
+	if r.broker != nil {
+		err = r.broker.Close()
+		r.broker = nil
+	}
+	if r.flushDone != nil {
+		select {
+		case <-r.flushDone:
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		}
+	}
+	return err
 }
 
 // sparkplugHook implements mqtt.Hook to handle broker events.
@@ -164,9 +181,8 @@ func (h *sparkplugHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.P
 	return pk, err
 }
 
-func (r *sparkplugReceiver) startBroker(context.Context) error {
+func (r *sparkplugReceiver) startBroker() error {
 	r.broker = mqtt.New(&mqtt.Options{InlineClient: true})
-	r.brokerDone = make(chan error)
 
 	switch r.config.Broker.AddrConfig.Transport {
 	case "tcp":
@@ -199,24 +215,27 @@ func (r *sparkplugReceiver) startBroker(context.Context) error {
 		return err
 	}
 
-	go func() {
-		r.settings.Logger.Info(
-			"listening",
-			zap.String("endpoint", r.config.Broker.AddrConfig.Endpoint),
-		)
-		r.brokerDone <- r.broker.Serve()
-	}()
+	return r.broker.Serve()
+}
 
+func (r *sparkplugReceiver) startFlushing(startCtx context.Context) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(startCtx))
+	r.cancelFlush = cancel
+	done := make(chan struct{})
+	r.flushDone = done
 	go func() {
+		defer close(done)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 		for {
-			time.Sleep(time.Second * 30)
-			if err := r.flush(); err != nil {
-				panic("error in flush")
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.flush(ctx)
 			}
 		}
 	}()
-
-	return nil
 }
 
 func (r *sparkplugReceiver) onMessage(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
@@ -355,10 +374,22 @@ func (r *sparkplugReceiver) sparkplugDevicePayload(topic sparkplug.Topic, payloa
 	return device.Visit(topic, payload)
 }
 
-func (r *sparkplugReceiver) flush() error {
+func (r *sparkplugReceiver) flush(ctx context.Context) {
+	for _, metrics := range r.snapshotMetrics() {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := r.nextConsumer.ConsumeMetrics(ctx, metrics); err != nil && !errors.Is(err, ctx.Err()) {
+			r.settings.Logger.Error("failed to export Sparkplug metrics", zap.Error(err))
+		}
+	}
+}
+
+func (r *sparkplugReceiver) snapshotMetrics() []pmetric.Metrics {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
+	var batches []pmetric.Metrics
 	now := time.Now()
 	nowTS := pcommon.NewTimestampFromTime(now)
 
@@ -425,11 +456,9 @@ func (r *sparkplugReceiver) flush() error {
 					r.setNumberValue(dp, metric.Value)
 				}
 
-				if err := r.nextConsumer.ConsumeMetrics(context.Background(), metrics); err != nil {
-					return err
-				}
+				batches = append(batches, metrics)
 			}
 		}
 	}
-	return nil
+	return batches
 }

@@ -1,8 +1,8 @@
 # OpenTelemetry Collector Builder Configuration for MQTT Sparkplug Receiver
 #
 # Usage:
-#   go install go.opentelemetry.io/collector/cmd/builder@latest
-#   builder --config otelcol-builder/builder-config.yaml
+#   go install go.opentelemetry.io/collector/cmd/builder@v0.166.0
+#   (cd otelcol-builder && builder --config builder-config.yaml)
 #
 # The resulting binary will include the sparkplug receiver and a debug exporter
 # for testing purposes.
@@ -11,7 +11,7 @@ dist:
   name: otelcol-sparkplug
   description: OpenTelemetry Collector with MQTT Sparkplug receiver
   output_path: ./dist
-  otelcol_version: "0.152.1"
+  version: "0.166.0"
 
 receivers:
   - gomod: github.com/jmacd/opentelemetry-mqtt-sparkplug v0.0.1
@@ -20,11 +20,11 @@ receivers:
     path: ../
 
 exporters:
-  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.152.1
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.166.0
 
 providers:
-  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.58.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.58.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/httpprovider v1.58.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/httpsprovider v1.58.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.58.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.72.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.72.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/httpprovider v1.72.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/httpsprovider v1.72.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.72.0
