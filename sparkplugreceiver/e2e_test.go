@@ -2,9 +2,12 @@ package sparkplugreceiver
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
@@ -18,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // metricsSink is a simple consumer.Metrics implementation that captures all
@@ -95,7 +99,7 @@ func TestE2ESelfHosted(t *testing.T) {
 	err = recv.Start(context.Background(), nopHost{})
 	require.NoError(t, err)
 	defer func() {
-		_ = recv.Shutdown(context.Background())
+		require.NoError(t, recv.Shutdown(t.Context()))
 	}()
 
 	// Connect the Sparkplug client to the self-hosted broker.
@@ -177,7 +181,7 @@ func TestE2ESelfHosted(t *testing.T) {
 
 	// Call flush() directly (same package) to trigger ConsumeMetrics.
 	r := recv.(*sparkplugReceiver)
-	require.NoError(t, r.flush())
+	r.flush(t.Context())
 
 	// Verify that we received at least one batch of metrics.
 	all := sink.allMetrics()
@@ -214,6 +218,56 @@ func TestE2ESelfHosted(t *testing.T) {
 		}
 	}
 	require.True(t, found, "temperature metric not found in flushed output")
+}
+
+func TestFlushLoopHandlesBackpressure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		core, logs := observer.New(zap.ErrorLevel)
+		queueErr := errors.New("queue unavailable")
+		var attempts atomic.Int32
+		sink, err := consumer.NewMetrics(func(ctx context.Context, _ pmetric.Metrics) error {
+			if attempts.Add(1) == 1 {
+				return queueErr
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		require.NoError(t, err)
+		recv, err := New(receiver.Settings{
+			TelemetrySettings: component.TelemetrySettings{Logger: zap.New(core)},
+		}, Config{}, sink)
+		require.NoError(t, err)
+		r := recv.(*sparkplugReceiver)
+		topic := sparkplug.NewTopic("group", sparkplug.DBIRTH, "node", "device")
+		require.NoError(t, r.sparkplugPayload(topic, &sparkproto.Payload{}))
+
+		r.startFlushing(t.Context())
+		defer r.cancelFlush()
+		synctest.Wait()
+		time.Sleep(30 * time.Second)
+		synctest.Wait()
+		require.EqualValues(t, 1, attempts.Load())
+		require.Len(t, logs.All(), 1)
+		require.Equal(t, queueErr.Error(), logs.All()[0].ContextMap()["error"])
+
+		time.Sleep(30 * time.Second)
+		synctest.Wait()
+		require.EqualValues(t, 2, attempts.Load())
+		published := make(chan error, 1)
+		go func() { published <- r.sparkplugPayload(topic, &sparkproto.Payload{}) }()
+		select {
+		case err := <-published:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("blocked export prevented MQTT ingestion")
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		require.NoError(t, r.Shutdown(ctx))
+		time.Sleep(30 * time.Second)
+		require.EqualValues(t, 2, attempts.Load())
+	})
 }
 
 // proto64 returns a pointer to a uint64.
