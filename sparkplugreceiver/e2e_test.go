@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -223,10 +224,9 @@ func TestFlushLoopHandlesBackpressure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		core, logs := observer.New(zap.ErrorLevel)
 		queueErr := errors.New("queue unavailable")
-		attempts := 0
+		var attempts atomic.Int32
 		sink, err := consumer.NewMetrics(func(ctx context.Context, _ pmetric.Metrics) error {
-			attempts++
-			if attempts == 1 {
+			if attempts.Add(1) == 1 {
 				return queueErr
 			}
 			<-ctx.Done()
@@ -246,13 +246,13 @@ func TestFlushLoopHandlesBackpressure(t *testing.T) {
 		synctest.Wait()
 		time.Sleep(30 * time.Second)
 		synctest.Wait()
-		require.Equal(t, 1, attempts)
+		require.EqualValues(t, 1, attempts.Load())
 		require.Len(t, logs.All(), 1)
 		require.Equal(t, queueErr.Error(), logs.All()[0].ContextMap()["error"])
 
 		time.Sleep(30 * time.Second)
 		synctest.Wait()
-		require.Equal(t, 2, attempts)
+		require.EqualValues(t, 2, attempts.Load())
 		published := make(chan error, 1)
 		go func() { published <- r.sparkplugPayload(topic, &sparkproto.Payload{}) }()
 		select {
@@ -266,7 +266,7 @@ func TestFlushLoopHandlesBackpressure(t *testing.T) {
 		defer cancel()
 		require.NoError(t, r.Shutdown(ctx))
 		time.Sleep(30 * time.Second)
-		require.Equal(t, 2, attempts)
+		require.EqualValues(t, 2, attempts.Load())
 	})
 }
 
